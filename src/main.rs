@@ -231,11 +231,12 @@ fn latest_per_drive(mut v: Vec<BootCheck>, since: i64) -> Vec<BootCheck> {
     out
 }
 
-fn cmd_report(wait: bool, all: bool) -> i32 {
+fn cmd_report(wait: bool, all: bool, online: bool) -> i32 {
     let boot = if all { 120 } else { now_unix() - drives::uptime_secs() as i64 };
     let armed = read_armed();
     let (c, xml) = run("wevtutil", &["qe", "Application", "/q:*[System[Provider[@Name='Wininit']]]", "/c:200", "/rd:true", "/f:xml"]);
-    let (c2, xml2) = run("wevtutil", &["qe", "Application", "/q:*[System[Provider[@Name='Microsoft-Windows-Chkdsk']]]", "/c:200", "/rd:true", "/f:xml"]);
+    // Online chkdsk scans also log here (event 26226); only used with --include-online (parser validation on real data).
+    let (c2, xml2) = if online { run("wevtutil", &["qe", "Application", "/q:*[System[Provider[@Name='Chkdsk']]]", "/c:200", "/rd:true", "/f:xml"]) } else { (0, String::new()) };
     if c != 0 && c2 != 0 {
         println!("Could not read the event log (exit {}): {}", c, xml.trim());
     }
@@ -243,7 +244,7 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
     events.extend(parse::parse_events(&xml2));
     let checks = latest_per_drive(events, boot - 120);
 
-    let all = drives::list();
+    let present = drives::list();
     let wanted: Vec<char> = match &armed {
         Some((_, dr)) => dr.iter().filter_map(|d| d.chars().next()).collect(),
         None => checks.iter().map(|c| c.letter).filter(|c| *c != '?').collect(),
@@ -252,6 +253,7 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
     let mut clean = vec![];
     let mut problems = vec![];
     let mut missing = vec![];
+    let mut unclear = vec![];
     let mut text = String::new();
     text.push_str("=========== BOOTGUARD - boot-time disk check results ===========\n");
     text.push_str("Drive  Type                 Filesystem  Result\n");
@@ -264,7 +266,7 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
     letters.sort();
     letters.dedup();
     for l in &letters {
-        let d = all.iter().find(|d| d.letter == *l);
+        let d = present.iter().find(|d| d.letter == *l);
         let (kind, fs) = d.map(|d| (d.kind_name().to_string(), d.fs.clone().unwrap_or_else(|| "?".into()))).unwrap_or(("(not present now)".into(), "?".into()));
         let (_, q) = run("fsutil", &["dirty", "query", &format!("{}:", l)]);
         let dirty_now = q.to_lowercase().contains("dirty") && !q.to_lowercase().contains("not dirty");
@@ -283,8 +285,8 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
                     "PROBLEMS REMAIN - could not be fully repaired".to_string()
                 }
                 Verdict::Unknown => {
-                    problems.push(*l);
-                    "CHECKED but the result could not be read from the log".to_string()
+                    unclear.push(*l);
+                    "CHECKED, but the log text has no clear outcome (see details)".to_string()
                 }
             },
             None => {
@@ -310,6 +312,10 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
     if !problems.is_empty() {
         text.push_str(&format!("PROBLEMS REMAIN on: {}\n", j(&problems)));
     }
+    if !unclear.is_empty() {
+        text.push_str(&format!("UNCLEAR OUTCOME on: {}
+", j(&unclear)));
+    }
     if !missing.is_empty() {
         text.push_str(&format!("NOT CHECKED: {}\n", j(&missing)));
     }
@@ -317,9 +323,13 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
         text.push_str("No boot-check records were found for this boot. Run 'bootguard arm' as Administrator, then Restart (not Shut down).\n");
     }
     print!("{}", text);
-    let _ = std::fs::write(state_dir().join("last-report.txt"), &text);
-    println!("(saved to {})", state_dir().join("last-report.txt").display());
-    if armed.is_some() {
+    if !all && !online {
+        let _ = std::fs::write(state_dir().join("last-report.txt"), &text);
+        println!("(saved to {})", state_dir().join("last-report.txt").display());
+    } else {
+        println!("(preview mode: nothing saved, task and armed state untouched)");
+    }
+    if armed.is_some() && !all && !online {
         let _ = run("schtasks", &["/delete", "/tn", TASK, "/f"]);
         let _ = std::fs::remove_file(state_dir().join("armed.txt"));
         println!("One-shot report finished; the logon task was removed. Run 'bootguard arm' again before another reboot check.");
@@ -329,7 +339,7 @@ fn cmd_report(wait: bool, all: bool) -> i32 {
         let mut s = String::new();
         let _ = std::io::stdin().read_line(&mut s);
     }
-    if problems.is_empty() && missing.is_empty() && !letters.is_empty() {
+    if problems.is_empty() && missing.is_empty() && unclear.is_empty() && !letters.is_empty() {
         0
     } else {
         1
@@ -343,13 +353,14 @@ fn main() {
         std::process::exit(2)
     };
     let mut sel: Vec<char> = vec![];
-    let (mut dry, mut wait, mut all) = (false, true, false);
+    let (mut dry, mut wait, mut all, mut online) = (false, true, false, false);
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--dry-run" => dry = true,
             "--no-wait" => wait = false,
             "--all" => all = true,
+            "--include-online" => online = true,
             "--drive" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -376,7 +387,7 @@ fn main() {
         "list" => cmd_list(),
         "arm" => cmd_arm(sel, dry),
         "status" => cmd_status(),
-        "report" => cmd_report(wait, all),
+        "report" => cmd_report(wait, all, online),
         "disarm" => cmd_disarm(),
         "-h" | "--help" | "help" => {
             usage();

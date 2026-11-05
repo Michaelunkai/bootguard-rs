@@ -1,0 +1,22 @@
+﻿The type of the file system is exFAT.
+Insufficient storage available to create either the shadow copy storage file or other shadow copy data.
+
+Volume Serial Number is E636-4024
+Windows is verifying files and folders...
+0 percent completed.                  
+50 percent completed..                 
+File and folder verification is complete.
+
+Windows has scanned the file system and found no problems.
+No further action is required.
+
+      245376 KB total disk space.
+          48 KB in 7 files.
+          12 KB in 3 indexes.
+           0 KB in bad sectors.
+          16 KB in use by the system.
+      245300 KB available on disk.
+
+        4096 bytes in each allocation unit.
+       61344 total allocation units on disk.
+       61325 allocation units available on disk.

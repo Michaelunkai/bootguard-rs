@@ -61,6 +61,10 @@ pub fn classify(text: &str) -> Verdict {
     if any_bad {
         return Verdict::ProblemsRemain;
     }
+    // FAT/FAT32 chkdsk output ends with disk statistics and no verdict sentence when the volume is healthy.
+    if t.contains("allocation units available on disk") || t.contains("total disk space") {
+        return Verdict::NothingToFix;
+    }
     Verdict::Unknown
 }
 
@@ -68,7 +72,7 @@ pub fn classify(text: &str) -> Verdict {
 pub fn details(text: &str) -> Vec<String> {
     let keys = [
         "recovered", "recovering", "corrected", "correcting", "repaired", "replaced", "deleting", "fixing", "orphan",
-        "bad cluster", "bad sector", "unindexed", "errors found", "could not", "cannot", "made corrections", "no problems",
+        "bad cluster", "bad sector", "unindexed", "corruption was found", "errors found", "could not", "cannot", "made corrections", "no problems",
     ];
     let mut out: Vec<String> = vec![];
     for l in text.lines() {
@@ -77,6 +81,9 @@ pub fn details(text: &str) -> Vec<String> {
             continue;
         }
         let low = l.to_lowercase();
+        if low.contains("phase duration") {
+            continue;
+        }
         if keys.iter().any(|k| low.contains(k)) && !out.iter().any(|o| o == l) {
             out.push(l.to_string());
         }
@@ -132,7 +139,7 @@ pub fn parse_events(xml: &str) -> Vec<BootCheck> {
             .and_then(|p| between(&ev[p..], ">", "</EventID>"))
             .map(|v| v.trim().to_string())
             .unwrap_or_default();
-        if id != "1001" && id != "26212" {
+        if id != "1001" && id != "26212" && id != "26226" {
             continue;
         }
         let time = ev
@@ -179,6 +186,26 @@ mod tests {
     #[test]
     fn classify_bad() {
         assert_eq!(classify(BAD), Verdict::ProblemsRemain);
+    }
+    #[test]
+    fn classify_fat_stats_only() {
+        assert_eq!(classify("Stage 3: Examining security descriptors ...
+ 22283 allocation units available on disk.
+Total duration: 4 ms"), Verdict::NothingToFix);
+        assert_eq!(classify("Errors found.  CHKDSK cannot continue.
+ 22283 allocation units available on disk."), Verdict::ProblemsRemain);
+    }
+    #[test]
+    fn real_chkdsk_exfat_repair_is_fixed() {
+        let t = include_str!("../tests/fixtures/real-chkdsk-exfat-leak-fixed.txt");
+        assert_eq!(classify(t), Verdict::Fixed);
+        assert!(details(t).iter().any(|l| l.contains("Corruption was found")));
+        assert!(details(t).iter().any(|l| l.contains("made corrections")));
+    }
+    #[test]
+    fn real_chkdsk_exfat_clean_is_nothing_to_fix() {
+        let t = include_str!("../tests/fixtures/real-chkdsk-exfat-clean.txt");
+        assert_eq!(classify(t), Verdict::NothingToFix);
     }
     #[test]
     fn classify_unknown() {

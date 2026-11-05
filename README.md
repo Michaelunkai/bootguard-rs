@@ -7,7 +7,7 @@
 ![Rust](https://img.shields.io/badge/Rust-std%20only-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/Windows-10%2F11%20x64-blue?logo=windows)
 ![Filesystems](https://img.shields.io/badge/NTFS%20%7C%20exFAT%20%7C%20FAT%20%7C%20FAT32-supported-success)
-![Tests](https://img.shields.io/badge/unit%20tests-12%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/unit%20tests-15%20passing-brightgreen)
 
 </div>
 
@@ -69,7 +69,7 @@ Exit codes: `0` ok · `1` problems remain / action failed · `2` usage error · 
 
 ```bash
 source .cargo-env.sh       # adjust toolchain paths for your machine
-cargo test --release       # 12 unit tests (event-log parsing, verdicts, drive lists)
+cargo test --release       # 15 unit tests (event-log parsing, verdicts, drive lists)
 cargo build --release      # target/x86_64-pc-windows-gnu/release/bootguard.exe
 ```
 
@@ -78,3 +78,10 @@ No dependencies — only the Rust standard library and a few Win32 calls.
 ## License
 
 MIT © Michael Fedorovsky
+
+## Verification notes
+
+* The parser is tested on **real Windows chkdsk output** (`tests/fixtures`): a genuine exFAT repair (*"Corruption was found while
+  examining the volume bitmap. Windows has made corrections to the file system."* → `FIXED`) and a clean scan (→ `NOTHING TO FIX`),
+  and was run against real chkdsk events from the Windows event log.
+* `bootguard report --all --include-online` previews results without touching the armed state.
