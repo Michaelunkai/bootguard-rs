@@ -10,6 +10,32 @@ extern "system" {
 #[link(name = "shell32")]
 extern "system" {
     fn IsUserAnAdmin() -> i32;
+    fn ShellExecuteW(hwnd: isize, verb: *const u16, file: *const u16, params: *const u16, dir: *const u16, show: i32) -> isize;
+}
+
+/// Path as a plain Win32 string: drops a `\\?\` verbatim prefix that current_exe may return.
+pub fn plain_path(p: &str) -> String {
+    p.strip_prefix("\\\\?\\").unwrap_or(p).to_string()
+}
+
+/// Re-launch this exe elevated (UAC prompt) with the given arguments. True when Windows accepted the request.
+/// The exe path is its own ShellExecute parameter, so spaces in it need no quoting.
+pub fn relaunch_elevated(args: &str) -> bool {
+    let exe = plain_path(&std::env::current_exe().unwrap_or_default().display().to_string());
+    let wdir = std::path::Path::new(&exe).parent().map(|d| wide(&d.display().to_string()));
+    let dptr = wdir.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+    let r = unsafe { ShellExecuteW(0, wide("runas").as_ptr(), wide(&exe).as_ptr(), wide(args).as_ptr(), dptr, 1) };
+    r > 32
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::plain_path;
+    #[test]
+    fn strips_verbatim_prefix_and_keeps_spaces() {
+        assert_eq!(plain_path("\\\\?\\C:\\Program Files\\bg\\bootguard.exe"), "C:\\Program Files\\bg\\bootguard.exe");
+        assert_eq!(plain_path("C:\\a b\\x.exe"), "C:\\a b\\x.exe");
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

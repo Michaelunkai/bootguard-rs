@@ -3,3 +3,10 @@ target-*/
 *.log
 dist/
 bootguard.exe
+.mcp.json
+.multiagents/
+target-eng/
+target-rev/
+target-qa/
+review/
+qa/

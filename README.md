@@ -7,7 +7,7 @@
 ![Rust](https://img.shields.io/badge/Rust-std%20only-orange?logo=rust)
 ![Platform](https://img.shields.io/badge/Windows-10%2F11%20x64-blue?logo=windows)
 ![Filesystems](https://img.shields.io/badge/NTFS%20%7C%20exFAT%20%7C%20FAT%20%7C%20FAT32-supported-success)
-![Tests](https://img.shields.io/badge/unit%20tests-15%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/unit%20tests-26%20passing-brightgreen)
 
 </div>
 
@@ -45,10 +45,17 @@ or download `bootguard.exe` from [Releases](https://github.com/Michaelunkai/boot
 
 ## Usage
 
+**Simplest: just run `bootguard.exe` with no arguments.** It asks for Administrator (UAC), arms *every* drive
+(internal + external, NTFS/exFAT/FAT/FAT32) and creates the logon report task, then lists each armed drive and tells you to
+restart. On the next restart Windows scans and repairs each drive (boot screen shows `NN%` per drive, then it returns to
+Windows by itself) and at logon a report window shows per drive FIXED / NOTHING TO FIX / PROBLEMS REMAIN / NOT CHECKED.
+If arming is incomplete (e.g. the logon task cannot be created) it says so loudly and exits 1.
+
 ```text
+bootguard.exe                            do everything: self-elevate, arm all drives, wait for Enter
 bootguard.exe list                       every local drive and whether the boot check can repair it
-bootguard.exe arm [--drive E,F] [--dry-run]   (Administrator) make the NEXT restart scan + repair all (or listed) drives
-bootguard.exe status                     what is armed
+bootguard.exe arm [--drive E,F] [--dry-run] [--pause]   (Administrator) make the NEXT restart scan + repair all (or listed) drives
+bootguard.exe status                     what is armed (each armed drive with its filesystem) and whether the logon task exists
 bootguard.exe report [--no-wait] [--all] per-drive result of the boot check (runs automatically at logon)
 bootguard.exe disarm                     cancel: remove the logon task and exclude the armed drives from the boot check
 ```
@@ -69,7 +76,7 @@ Exit codes: `0` ok · `1` problems remain / action failed · `2` usage error · 
 
 ```bash
 source .cargo-env.sh       # adjust toolchain paths for your machine
-cargo test --release       # 15 unit tests (event-log parsing, verdicts, drive lists)
+cargo test --release       # 26 unit tests (event-log parsing, verdicts, drive lists)
 cargo build --release      # target/x86_64-pc-windows-gnu/release/bootguard.exe
 ```
 
