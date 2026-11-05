@@ -19,6 +19,11 @@ pub struct BootCheck {
     pub unix_time: i64,
     pub verdict: Verdict,
     pub details: Vec<String>,
+    /// event provider ("Wininit" = boot-time autochk, "Chkdsk" = chkdsk run by Windows)
+    #[allow(dead_code)]
+    pub provider: String,
+    /// text says the check was scheduled for boot ("A disk check has been scheduled")
+    pub scheduled: bool,
 }
 
 /// Days since 1970-01-01 for a civil date (Howard Hinnant's algorithm).
@@ -153,7 +158,13 @@ pub fn parse_events(xml: &str) -> Vec<BootCheck> {
             .map(unescape)
             .unwrap_or_default();
         let letter = drive_letter(&data).unwrap_or('?');
-        out.push(BootCheck { letter, unix_time: time, verdict: classify(&data), details: details(&data) });
+        let provider = ev
+            .find("Provider Name=")
+            .and_then(|p| ev.get(p + 15..))
+            .map(|r| r.chars().take_while(|c| *c != '\'' && *c != '"').collect::<String>())
+            .unwrap_or_default();
+        let scheduled = data.to_lowercase().contains("disk check has been scheduled");
+        out.push(BootCheck { letter, unix_time: time, verdict: classify(&data), details: details(&data), provider, scheduled });
     }
     out
 }
@@ -227,7 +238,7 @@ Total duration: 4 ms"), Verdict::NothingToFix);
     #[test]
     fn events_xml() {
         let xml = format!(
-            "<Event xmlns='x'><System><EventID Qualifiers='0'>1001</EventID><TimeCreated SystemTime='2026-11-05T14:03:09.1Z'/></System><EventData><Data>{}</Data></EventData></Event>\n<Event><System><EventID>1000</EventID></System><EventData><Data>skip</Data></EventData></Event>\n<Event><System><EventID Qualifiers='0'>1001</EventID><TimeCreated SystemTime='2026-11-05T14:05:00.0Z'/></System><EventData><Data>{}</Data></EventData></Event>",
+            "<Event xmlns='x'><System><Provider Name='Wininit'/><EventID Qualifiers='0'>1001</EventID><TimeCreated SystemTime='2026-11-05T14:03:09.1Z'/></System><EventData><Data>{}</Data></EventData></Event>\n<Event><System><EventID>1000</EventID></System><EventData><Data>skip</Data></EventData></Event>\n<Event><System><EventID Qualifiers='0'>1001</EventID><TimeCreated SystemTime='2026-11-05T14:05:00.0Z'/></System><EventData><Data>{}</Data></EventData></Event>",
             CLEAN.replace('\n', "&#xA;"),
             FIXED.replace('\n', "&#xA;")
         );
@@ -236,5 +247,7 @@ Total duration: 4 ms"), Verdict::NothingToFix);
         assert_eq!((v[0].letter, v[0].verdict.clone()), ('E', Verdict::NothingToFix));
         assert_eq!((v[1].letter, v[1].verdict.clone()), ('D', Verdict::Fixed));
         assert_eq!(v[0].unix_time, 1793887200 + 189);
+        assert_eq!(v[0].provider, "Wininit");
+        assert!(!v[0].scheduled);
     }
 }

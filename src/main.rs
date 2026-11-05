@@ -236,12 +236,13 @@ fn cmd_report(wait: bool, all: bool, online: bool) -> i32 {
     let armed = read_armed();
     let (c, xml) = run("wevtutil", &["qe", "Application", "/q:*[System[Provider[@Name='Wininit']]]", "/c:200", "/rd:true", "/f:xml"]);
     // Online chkdsk scans also log here (event 26226); only used with --include-online (parser validation on real data).
-    let (c2, xml2) = if online { run("wevtutil", &["qe", "Application", "/q:*[System[Provider[@Name='Chkdsk']]]", "/c:200", "/rd:true", "/f:xml"]) } else { (0, String::new()) };
+    let (c2, xml2) = run("wevtutil", &["qe", "Application", "/q:*[System[Provider[@Name='Chkdsk']]]", "/c:200", "/rd:true", "/f:xml"]);
     if c != 0 && c2 != 0 {
         println!("Could not read the event log (exit {}): {}", c, xml.trim());
     }
     let mut events = parse::parse_events(&xml);
-    events.extend(parse::parse_events(&xml2));
+    // Chkdsk-provider events: online scans also log here, so outside preview mode only boot-scheduled checks count.
+    events.extend(parse::parse_events(&xml2).into_iter().filter(|e| online || e.scheduled));
     let checks = latest_per_drive(events, boot - 120);
 
     let present = drives::list();
@@ -417,7 +418,7 @@ mod tests {
     }
     #[test]
     fn latest_wins_and_old_dropped() {
-        let mk = |l, t, v| BootCheck { letter: l, unix_time: t, verdict: v, details: vec![] };
+        let mk = |l, t, v| BootCheck { letter: l, unix_time: t, verdict: v, details: vec![], provider: String::new(), scheduled: false };
         let v = vec![mk('E', 10, Verdict::ProblemsRemain), mk('E', 50, Verdict::Fixed), mk('D', 5, Verdict::NothingToFix), mk('C', 100, Verdict::NothingToFix)];
         let r = latest_per_drive(v, 20);
         assert_eq!(r.len(), 2);
